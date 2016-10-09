@@ -22,11 +22,7 @@ import {BrowserRunner} from './browserrunner';
 import * as config from './config';
 import {Plugin} from './plugin';
 
-type Handler =
-    ((...args: any[]) => Promise<any>)|((done: (err?: any) => void) => void)|
-    ((arg1: any, done: (err?: any) => void) => void)|
-    ((arg1: any, arg2: any, done: (err?: any) => void) => void)|
-    ((arg1: any, arg2: any, arg3: any, done: (err?: any) => void) => void);
+type Handler = ((...args: any[]) => Promise<any>);
 
 /**
  * Exposes the current state of a WCT run, and emits events/hooks for anyone
@@ -99,73 +95,31 @@ export class Context extends events.EventEmitter {
    * @param {function(*)} done
    * @return {!Context}
    */
-  emitHook(
-      name: 'prepare:webserver', app: Express.Application,
-      done: (err?: any) => void): Promise<void>;
-  emitHook(name: 'configure', done: (err?: any) => void): Promise<void>;
-  emitHook(name: 'prepare', done: (err?: any) => void): Promise<void>;
-  emitHook(name: 'cleanup', done: (err?: any) => void): Promise<void>;
-  emitHook(name: string, done: (err?: any) => void): Promise<void>;
+  emitHook(name: 'prepare:webserver', app: Express.Application): Promise<void>;
+  emitHook(name: 'configure'): Promise<void>;
+  emitHook(name: 'prepare'): Promise<void>;
+  emitHook(name: 'cleanup'): Promise<void>;
+  emitHook(name: string): Promise<void>;
   emitHook(name: string, ...args: any[]): Promise<void>;
-  async emitHook(name: string, done: (err?: any) => void): Promise<void> {
+  async emitHook(name: string): Promise<void> {
     this.emit('log:debug', 'hook:', name);
 
     const hooks = (this._hookHandlers[name] || []);
-    type BoundHook = (cb: (err: any) => void) => (void|Promise<any>);
-    let boundHooks: BoundHook[];
-    if (arguments.length > 2) {
-      done = arguments[arguments.length - 1];
-      let argsEnd = arguments.length - 1;
-      if (!(done instanceof Function)) {
-        done = (e) => {};
-        argsEnd = arguments.length;
-      }
-      const hookArgs = Array.from(arguments).slice(1, argsEnd);
-      boundHooks = hooks.map(function(hook) {
-        return hook.bind.apply(hook, [null].concat(hookArgs));
-      });
-    }
-    if (!boundHooks) {
-      boundHooks = <any>hooks;
-    }
-    done = done || ((e) => {});
 
-    // A hook may return a promise or it may call a callback. We want to
-    // treat hooks as though they always return promises, so this converts.
-    const hookToPromise = (hook: BoundHook) => {
-      return new Promise((resolve, reject) => {
-        const maybePromise = hook((err) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve();
-          }
-        });
-        if (maybePromise) {
-          maybePromise.then(resolve, reject);
-        }
-      });
-    };
+    let hookArgs = <any>[];
+    if (arguments.length > 1) {
+      hookArgs = Array.from(arguments).slice(1);
+    }
+
+    type BoundHook = () => Promise<any>;
+    let boundHooks: BoundHook[] = hooks.map(function(hook) {
+      return hook.bind.apply(hook, [null].concat(hookArgs));
+    });
 
     // We execute the handlers _sequentially_. This may be slower, but it gives
     // us a lighter cognitive load and more obvious logs.
-    try {
-      for (const hook of boundHooks) {
-        await hookToPromise(hook);
-      }
-    } catch (err) {
-      // TODO(rictic): stop silently swallowing the error here and just below.
-      //     Looks like we'll need to track down some error being thrown from
-      //     deep inside the express router.
-      try {
-        done(err);
-      } catch (_) {
-      }
-      throw err;
-    }
-    try {
-      done();
-    } catch (_) {
+    for (const hook of boundHooks) {
+      await hook();
     }
   };
 

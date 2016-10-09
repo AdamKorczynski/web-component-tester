@@ -59,67 +59,44 @@ describe('Context', () => {
       expect(plugins).to.have.members(['local']);
     });
 
-    describe('hook handlers written to call callbacks', () => {
-      it('passes additional arguments through', async() => {
+    describe('hooks handlers', () => {
+      it('invoke hook with empty arguments', async() => {
+        const spy = sinon.spy();
         const context = new Context();
-        context.hook(
-            'foo',
-            (arg1: string, arg2: number, hookDone: (err?: any) => void) => {
-              expect(arg1).to.eq('one');
-              expect(arg2).to.eq(2);
-              hookDone();
-            });
-
-        // Tests the promise form of emitHook.
-        await context.emitHook('foo', 'one', 2);
-
-        // Tests the callback form of emitHook.
-        const error = await new Promise((resolve) => {
-          context.emitHook('foo', 'one', 2, resolve);
+        context.hook('foo', async function() {
+          expect(arguments.length).to.eq(0);
+          spy();
         });
-        expect(error).to.not.be.ok;
+
+        await context.emitHook('foo');
+
+        expect(spy.called).to.eq(true);
       });
 
-      it('halts on error', async() => {
+      it('accept single argument', async() => {
         const context = new Context();
-        context.hook('bar', function(hookDone: (err?: any) => void) {
-          hookDone('nope');
+        context.hook('foo', async function(arg1: any) {
+          expect(arguments.length).to.eq(1);
+          expect(arg1).to.eq('one');
         });
 
-        // Tests the promise form of emitHook.
-        try {
-          await context.emitHook('bar');
-          throw new Error('emitHook should have thrown');
-        } catch (error) {
-          expect(error).to.eq('nope');
-        }
-
-        // Tests the callback form of emitHook.
-        const error = await new Promise((resolve) => {
-          context.emitHook('bar', resolve);
-        });
-        expect(error).to.eq('nope');
+        await context.emitHook('foo', 'one');
       });
-    });
 
-    describe('hooks handlers written to return promises', () => {
-      it('passes additional arguments through', async() => {
+      it('pass additional arguments through', async() => {
         const context = new Context();
         context.hook('foo', async function(arg1: any, arg2: any) {
+          expect(arguments.length).to.eq(2);
           expect(arg1).to.eq('one');
           expect(arg2).to.eq(2);
         });
 
         await context.emitHook('foo', 'one', 2);
-        const error = await new Promise((resolve) => {
-          context.emitHook('foo', 'one', 2, resolve);
-        });
-        expect(error).to.not.be.ok;
       });
 
       it('halts on error', async() => {
         const context = new Context();
-        context.hook('bar', async() => {
+        context.hook('bar', async function() {
           throw 'nope';
         });
 
@@ -130,12 +107,6 @@ describe('Context', () => {
         } catch (error) {
           expect(error).to.eq('nope');
         }
-
-        // Tests the callback form of emitHook.
-        const error = await new Promise((resolve) => {
-          context.emitHook('bar', resolve);
-        });
-        expect(error).to.eq('nope');
       });
     });
   });
